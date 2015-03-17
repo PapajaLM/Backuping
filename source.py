@@ -67,6 +67,7 @@ class SourceFile(SourceObject):
                     if verbose : print("Lnk mTime bez zmeny. return novy side_dict(stary_hash) !")
                     # rovanky mtime
                     # vyrob side dict stary hash + aktualny lstat
+                    self.store.incIndex(self.target_object.side_dict['hash'])
                     return self.make_side_dict(self.target_object.side_dict['hash']) #stary hash
                 else:
                     # rozny mtime
@@ -75,6 +76,7 @@ class SourceFile(SourceObject):
                     if (new_hash == self.target_object.side_dict['hash']
                         or os.path.exists(self.store.get_object_path(new_hash))):
                         if verbose : print("File mTime zmeneny. return novy side_dict(novy_hash) !")
+                        self.store.incIndex(new_hash)
                         return self.make_side_dict(new_hash)
                     else:
                         if verbose : print("File Novy object zalohy.")
@@ -82,7 +84,7 @@ class SourceFile(SourceObject):
                         return self.make_side_dict(hash)
             else:
                 if verbose : print("Lnk mTime zmeneny. rovnake meta")
-                #tu incIndex???
+                self.store.incIndex(self.target_object.side_dict['hash'])
                 return self.target_object.side_dict # ak sa rovnaju staty
         else:
             if verbose : print("File Novy object zalohy.")
@@ -157,7 +159,7 @@ class SourceLnk(SourceObject):
                     if verbose : print("Lnk mTime bez zmeny. return novy side_dict(stary_hash) !")
                     # rovanky mtime
                     # vyrob side dict stary hash + aktualny lstat
-                    #tu incIndex???
+                    self.store.incIndex(self.target_object.side_dict['hash'])
                     return self.make_side_dict(self.target_object.side_dict['hash']) #stary hash
                 else:
                     # rozny mtime
@@ -166,14 +168,14 @@ class SourceLnk(SourceObject):
                     if (new_hash == self.target_object.side_dict[self.file_name]['hash']
                         or os.path.exists(self.store.get_object_path(new_hash))):
                         if verbose : print("Lnk mTime zmeneny. return novy side_dict(novy_hash) !")
-                        #tu incIndex???
+                        self.store.incIndex(new_hash)
                         return self.make_side_dict(new_hash)
                     else:
                         if verbose : print("Lnk Novy object zalohy !")
                         return self.make_side_dict(self.make_lnk())
             else:
                 if verbose : print("Lnk mTime zmeneny. rovnake meta")
-                #tu incIndex???
+                self.store.incIndex(self.target_object.side_dict['hash'])
                 return self.target_object.side_dict # ak sa rovnaju staty
         else:
             if verbose : print("Lnk Novy object zalohy.")

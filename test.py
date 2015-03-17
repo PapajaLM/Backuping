@@ -7,6 +7,40 @@ import pickledb
 import shutil
 from stat import *
 from CodernityDB.database import Database
+from CodernityDB.hash_index import HashIndex
+from CodernityDB.database import RecordNotFound
+from hashlib import md5
+
+class WithHashIndex(HashIndex):
+
+    def __init__(self, *args, **kwargs):
+        kwargs['key_format'] = '16s'
+        super(WithHashIndex, self).__init__(*args, **kwargs)
+
+    def make_key_value(self, data):
+        value = data['hash']
+        if value is not None:
+            return md5(value).digest(), None
+        return None
+
+    def make_key(self, key):
+        return md5(key).digest()
+
+class WithPointerIndex(HashIndex):
+
+    def __init__(self, *args, **kwargs):
+        kwargs['key_format'] = 'I'
+        super(WithHashIndex, self).__init__(*args, **kwargs)
+
+    def make_key_value(self, data):
+        a_val = data.get("pointer")
+        if a_val is not None:
+            return a_val, None
+        return None
+
+    def make_key(self, key):
+        return key
+
 
 class MyFile(io.FileIO):
 
@@ -20,14 +54,34 @@ def main():
     db2 = pickledb.load('examlple.db', True)
     db2.set('test', 'test')
 
-    db = Database('/tmp/example.db')
-    db.create()
-    for x in xrange(100):
-        db.insert(dict(x=x))
+    db = Database('/home/papaja/Zaloha/target/store.db')
+    db.open()
+    # db.create()
+    # print database
+    # x_ind = WithHashIndex(db.path, 'hash')
+    # pointer_ind = WithHashIndex(db.path, 'pointer')
+    # db.add_index(x_ind)
+    # db.add_index(pointer_ind)
+    # db.insert({'hash':'3f8ee76c84d95c3f4ed061db98694be57e7d33da', 'pointer':1})
+    # # for x in xrange(100):
+    #     db.insert(dict(x='3f8ee76c84d95c3f4ed061db98694be57e7d33da'))
+    # for curr in db.all('id'):
+    #     curr['x'] = 1
+    #     db.update(curr)
+    #     print curr
     for curr in db.all('id'):
-        curr['x'] = 1
-        db.update(curr)
-        print curr
+         print curr
+    try:
+        test = db.get('hash', '3f8ee76c84d95c3f4ed061db98694be57e7d33da', with_doc=True)
+        print test
+    except RecordNotFound:
+        print "Nieje rekord"
+    exit()
+    test['doc']['pointer'] = test['doc']['pointer'] + 1
+    db.update(test['doc'])
+    for curr in db.all('id'):
+         print curr
+    exit()
 
     lstat = os.lstat("/home/papaja/.cache/keyring-SZ5Lrw/gpg")
     mode = lstat.st_mode

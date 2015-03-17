@@ -11,11 +11,50 @@ import tempfile
 from stat import *
 from backup_lib import BackupObject
 from backup_lib import objects_init
+from CodernityDB.database import Database
+from CodernityDB.hash_index import HashIndex
+from CodernityDB.database import RecordNotFound, RecordDeleted
+from hashlib import md5
+
+class WithHashIndex(HashIndex):
+
+    def __init__(self, *args, **kwargs):
+        kwargs['key_format'] = '16s'
+        super(WithHashIndex, self).__init__(*args, **kwargs)
+
+    def make_key_value(self, data):
+        value = data['hash']
+        return md5(value).digest(), None
+
+    def make_key(self, key):
+        return md5(key).digest()
+
+class WithPointerIndex(HashIndex):
+
+    def __init__(self, *args, **kwargs):
+        kwargs['key_format'] = 'I'
+        super(WithPointerIndex, self).__init__(*args, **kwargs)
+
+    def make_key_value(self, data):
+        a_val = data.get("pointer")
+        if a_val is not None:
+            return a_val, None
+        return None
+
+    def make_key(self, key):
+        return key
 
 class Store():
 
     def __init__(self, pathname):
         self.store_path = os.path.join(pathname, "target")
+        self.db = Database(os.path.join(self.store_path, "store.db"))
+        if not self.db.exists():
+            self.db.create()
+            self.db.add_index(WithHashIndex(self.db.path, "hash"))
+            self.db.add_index(WithPointerIndex(self.db.path, "pointer"))
+        else:
+            self.db.open()
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
 
@@ -118,6 +157,8 @@ class Store():
     def commit(self):
         print("Committing Journal")
         journal_path = self.get_journal_path()
+        if (os.path.exists(self.get_latest_path())):
+            os.remove(self.get_latest_path())
         if (self.is_journal_complete()):
             with open(os.path.join(journal_path, "journal_complete"), "rb") as TF:
                 for command in TF:
@@ -273,11 +314,23 @@ class Store():
         return file_hash.hexdigest()
 
     def incIndex(self, hash):
-        #najdem index v db, ak existuje update ++1, ak nie insert s hodnotou 1
+        try:
+            element = self.db.get('hash', hash, with_doc=True)
+            element = element['doc']
+            element['pointer'] = element['pointer'] + 1
+            self.db.update(element)
+        except RecordNotFound:
+            self.db.insert({'hash':hash, 'pointer':1})
         return
 
     def decIndex(self, hash):
-        #najdem index v db, ak je 1 tak: mazem/--1 a maze garbage, ak nie tak len --1
+        try:
+            element = self.db.get('hash', hash, with_doc=True)
+            element = element['doc']
+            element['pointer'] = element['pointer'] - 1
+            self.db.update(element)
+        except RecordNotFound:
+            self.db.insert({'hash':hash, 'pointer':1})
         return
 
     def rebuildDB(self):
@@ -482,6 +535,7 @@ class StoreGzipFile(StoreFile, file):#gzip.GzipFile):
         else:
             # gzip.GzipFile.__init__(self, file_name)
             file.__init__(self, file_name)
+            self.close()
 
     def open(self):
         file.__init__(self, self.name)
