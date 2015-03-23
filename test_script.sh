@@ -28,7 +28,7 @@ cp ../../../python.pdf .
 #  let "counter += 1";
 #done
 cd ../../..
-echo "=========== Backuping unchanged data =========="
+echo "=========== Backuping initial data =========="
 echo ""
 python backuper init DataToBackup Backup
 cp -a DataToBackup DataToBackupCopy1
@@ -111,20 +111,16 @@ echo ""
 python backuper backup DataToBackup Backup
 cp -a DataToBackup DataToBackupCopy9
 
-echo "=========== 9th change of data: Messing with object types =========="
+echo "=========== 9th change of data: Preparing for object type changes =========="
 cd DataToBackup/Data1
-# change a folder to a symlink
-mv folder1 real-folder1
-ln -s real-folder1 folder1
-# change a folder to a regular file
-mv folderWithData real-folderWithData
-echo "HA! The name lies. This is a file, not a folder." > folderWithData
-mv symlinks/symlink-to-folder symlinks/real-symlink-to-folder
-echo "This is actually a regular file." > symlinks/symlink-to-folder
-mv symlinks/symlink-to-file symlinks/real-symlink-to-file
-mkdir symlinks/symlink-to-file
-mkdir symlinks/symlink-to-file/this-is-actually-a-folder
-echo "1234567890" > symlinks/symlink-to-file/with-some-data
+mkdir type-changes
+cd type-changes
+mkdir folder-to-file folder-to-symlink
+echo "a file that will change to a symlink" > file-to-symlink
+echo "a file that will change to a folder" > file-to-folder
+ln -s nothing symlink-to-file
+ln -s nothing symlink-to-folder
+cd ..
 cd ../../
 sleep 5
 echo "=========== Backing up 9th changed data =========="
@@ -132,19 +128,44 @@ echo ""
 python backuper backup DataToBackup Backup
 cp -a DataToBackup DataToBackupCopy10
 
-echo "=========== 10th change of data: Cleanup after 8 and 9 =========="
+echo "=========== 10th change of data: Object type changes  =========="
+cd DataToBackup/Data1
+cd type-changes
+rmdir folder-to-file folder-to-symlink
+rm file-to-symlink file-to-folder symlink-to-file symlink-to-folder
+mkdir file-to-folder symlink-to-folder
+echo "a file that used to be a symlink" > symlink-to-file
+echo "a file that used to be a folder" > folder-to-file
+ln -s nothing file-to-symlink
+ln -s nothing folder-to-symlink
+cd ../../../
+sleep 5
+echo "=========== Backing up 10th changed data =========="
+echo ""
+python backuper backup DataToBackup Backup
+cp -a DataToBackup DataToBackupCopy11
+
+echo "=========== 11th change of data: No change after type changes  =========="
+sleep 5
+echo "=========== Backing up 11th changed data =========="
+echo ""
+python backuper backup DataToBackup Backup
+cp -a DataToBackup DataToBackupCopy12
+
+echo "=========== 12th change of data: Cleanup after 8--11 =========="
 cd DataToBackup/Data1
 rm -r symlinks
+rm -r type-changes
 rm folder1
 mv real-folder1 folder1
 rm folderWithData
 mv real-folderWithData folderWithData
 cd ../../
 sleep 5
-echo "=========== Backing up 10th changed data =========="
+echo "=========== Backing up 12th changed data =========="
 echo ""
 python backuper backup DataToBackup Backup
-cp -a DataToBackup DataToBackupCopy11
+cp -a DataToBackup DataToBackupCopy13
 
 #echo "=========== Mounting FUSE file system of backuped data =========="
 #echo ""
@@ -166,18 +187,18 @@ cp -a DataToBackup DataToBackupCopy11
 #kill %1
 #sleep 5
 
-echo "=========== Recovering backuped data =========="
+echo "=========== Recovering backed-up data =========="
 cd Backup/target/backups
 DIRS=(`ls`)
 cd ../../..
 cd MountPoint
-for i in {1..11}
+for i in {1..13}
 do
     mkdir DataToBackupCopy${i}
     python ../backuper recover DataToBackupCopy${i} ../Backup ${DIRS[$i - 1]}
     sleep 5
 done
-for i in {1..11}
+for i in {1..13}
 do
     echo "========== diff off DataToBackupCopy" ${i} " and " ${DIRS[$i - 1]} " =========="
     diff -r ../DataToBackupCopy${i} DataToBackupCopy${i}
@@ -187,7 +208,7 @@ done
 echo "=========== Removing all created data =========="
 cd ..
 rm -r DataToBackup
-for i in {1..11}
+for i in {1..13}
 do
     rm -r DataToBackupCopy$i
 done
