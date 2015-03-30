@@ -24,6 +24,14 @@ def recovery_backup(source_path, store_path, time):
     #'/home/kmm/Plocha/target/zaloha',target,'2013-04-29T21:00:42') # treba vediet cas
     rec_back.recovery_backup()
 
+def rebuild_backup(store_path):
+    store = Store(store_path)
+    store.rebuildDB()
+
+def remove_backup(store_path, time):
+    store = Store(store_path)
+    store.removeBackup(time)
+
 start = "\033[1m"
 end = "\033[0;0m"
 
@@ -129,6 +137,13 @@ def main(argv):
         pass
     elif argv[1] == "list":
         pass
+    elif argv[1] == "rebuild":
+        if os.path.exists(argv[2]):
+            rebuild_backup(argv[2])
+    elif argv[1] == "remove":
+        time_path = os.path.join(os.path.join(argv[2],"target/backups"), argv[3])
+        if os.path.exists(argv[2]) and os.path.exists(time_path):
+            remove_backup(argv[2], argv[3])
     elif "--help" in argv or "-h" in argv or "help" in argv:
         pass
     if len(argv) > 3 and len(argv) < 6: # 4 - 6 argumentov

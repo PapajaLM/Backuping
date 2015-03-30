@@ -120,15 +120,17 @@ class SourceDir(SourceObject):
         #(ale podobne treba spravit aj incremental_backup() v SourceFile a SourceLnk).
         main_dict = {}
         for F in os.listdir(self.source_path):
-                next_path = os.path.join(self.source_path, F)
-                if self.target_object != None:
-                    oldF = self.target_object.get_object(F)
-                else:
-                    oldF = None
-                new_object = SourceObject.create(next_path, self.store, oldF)
-                if new_object != None:
-                    side_dict = new_object.backup()
-                    main_dict[F] = side_dict
+            next_path = os.path.join(self.source_path, F)
+            if self.target_object != None:
+                st_mode = os.stat(next_path)[ST_MODE]
+                print "Hladam stary file: " + F
+                oldF = self.target_object.get_object(F, st_mode)
+            else:
+                oldF = None
+            new_object = SourceObject.create(next_path, self.store, oldF)
+            if new_object != None:
+                side_dict = new_object.backup()
+                main_dict[F] = side_dict
         #print main_dict
         hash = self.pickling(main_dict)
         return self.make_side_dict(hash)
@@ -165,7 +167,7 @@ class SourceLnk(SourceObject):
                     # rozny mtime
                     link_target = os.readlink(self.source_path)
                     new_hash = hashlib.sha1(link_target).hexdigest() # spocitaj hash a porovnaj
-                    if (new_hash == self.target_object.side_dict[self.file_name]['hash']
+                    if (new_hash == self.target_object.side_dict['hash']
                         or os.path.exists(self.store.get_object_path(new_hash))):
                         if verbose : print("Lnk mTime zmeneny. return novy side_dict(novy_hash) !")
                         self.store.incIndex(new_hash)

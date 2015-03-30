@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from stat import *
 from backup_lib import BackupObject
+from backup_lib import ExistingBackup
 from backup_lib import objects_init
 from CodernityDB.database import Database
 from CodernityDB.hash_index import HashIndex
@@ -48,13 +49,7 @@ class Store():
 
     def __init__(self, pathname):
         self.store_path = os.path.join(pathname, "target")
-        self.db = Database(os.path.join(self.store_path, "store.db"))
-        if not self.db.exists():
-            self.db.create()
-            self.db.add_index(WithHashIndex(self.db.path, "hash"))
-            self.db.add_index(WithPointerIndex(self.db.path, "pointer"))
-        else:
-            self.db.open()
+        self.init_store_db()
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
 
@@ -76,6 +71,15 @@ class Store():
         journal_backups_path = os.path.join(self.store_path, "journal/backups")
         if not os.path.exists(journal_backups_path):
             os.mkdir(journal_backups_path)
+
+    def init_store_db(self):
+        self.db = Database(os.path.join(self.store_path, "store.db"))
+        if not self.db.exists():
+            self.db.create()
+            self.db.add_index(WithHashIndex(self.db.path, "hash"))
+            self.db.add_index(WithPointerIndex(self.db.path, "pointer"))
+        else:
+            self.db.open()
 
 
     def get_path(self):
@@ -119,6 +123,13 @@ class Store():
 
     def get_journal_path(self):
         return os.path.join(self.store_path, "journal")
+
+    def get_all_backups(self):
+        backups_path = os.path.join(self.store_path, "backups")
+        backups = os.listdir(backups_path)
+        if "latest" in backups:
+            backups.remove("latest")
+        return backups
 
     def is_journal_complete(self):
         journal_path = self.get_journal_path()
@@ -334,13 +345,21 @@ class Store():
         return
 
     def rebuildDB(self):
-        return
+        self.db.destroy()
+        self.init_store_db()
+        backups = self.get_all_backups()
+        for backup in backups:
+            tmp = ExistingBackup('', self, backup)
+            tmp.recovery_backup(True)
 
     def deleteFile(self, hash):
         header_path = self.get_object_header_path(hash)
         object_path = self.get_object_path(hash)
         os.remove(header_path)
         os.remove(object_path)
+
+    def removeBackup(self, time):
+        pass
 
 
 
@@ -398,19 +417,22 @@ class StoreFile(StoreObject):
         #print source_path
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
 
-    def recover(self, block_size = constants.CONST_BLOCK_SIZE):
+    def recover(self, buildingDB = False, block_size = constants.CONST_BLOCK_SIZE):
         # reverse file_copy()
-        with self.store.get_object_file(self.side_dict['hash'], "rb") as TF:
-            #recovery_file = os.path.join(self.source_path)#name)
-            with open(self.source_path, "wb") as RF:
-                while True:
-                    block = TF.read(block_size)
-                    RF.write(block)
-                    if not block:
-                        break
-                RF.close()
-            TF.close()
-        self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        if not buildingDB:
+            with self.store.get_object_file(self.side_dict['hash'], "rb") as TF:
+                #recovery_file = os.path.join(self.source_path)#name)
+                with open(self.source_path, "wb") as RF:
+                    while True:
+                        block = TF.read(block_size)
+                        RF.write(block)
+                        if not block:
+                            break
+                    RF.close()
+                TF.close()
+            self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        else:
+            self.store.incIndex(self.side_dict['hash'])
 
 class StoreDir(StoreObject):
 
@@ -429,12 +451,14 @@ class StoreDir(StoreObject):
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
         #print self.side_dict
 
-    def get_object(self, name):
+    def get_object(self, name, st_mode):
         # zisti, ci objekt "name" existuje v zalohovanej verzii
         # tohto adresara
         # ak ano, vyrobi prislusny TargetObject
         # ak nie, vrati None
-        if name in self.loaded_dict:
+        if name in self.loaded_dict and self.loaded_dict[name]['lstat'].st_mode == st_mode:
+            print "Loaded_dict je: "
+            print self.loaded_dict
             if ('object_' + name) in self.loaded_obj:
                 return self.loaded_obj['object_' + name]
             else:
@@ -476,20 +500,21 @@ class StoreDir(StoreObject):
         #print return_dict
         return return_dict
 
-    def recover(self):
+    def recover(self, buildingDB = False):
         #prejst slovnik
         # ak dir tak rekurzia
         #inak .recovery_backup
         #passdef recovery_backup(self):
         #for name , in self.side_dict.iteritems():
         # if IS_REG(self.side_dict[key]['lstat'].st_mode):
-        if not os.path.exists(self.source_path):
+        if not buildingDB and not os.path.exists(self.source_path):
             os.mkdir(self.source_path)
         for store_object_name in self.loaded_dict.iterkeys():
             new_store_object = self.get_object(store_object_name)
-            new_store_object.recover()#os.path.join(self.source_path, target_object_name))
+            new_store_object.recover(buildingDB)#os.path.join(self.source_path, target_object_name))
         # obnovit metadata adresara!!!!!!!!!!!
-        self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        if not buildingDB:
+            self.recovery_stat(self.source_path, self.side_dict['lstat'])
 
 class StoreLnk(StoreObject):
 
@@ -509,10 +534,12 @@ class StoreLnk(StoreObject):
         except OSError:
             pass # dolnit printy / handle exceptetion
 
-    def recover(self):
-        os.symlink(self.read_backuped_lnk(), self.source_path )
-        self.recovery_stat(self.source_path, self.side_dict['lstat'])
-
+    def recover(self, buildingDB = False):
+        if not buildingDB:
+            os.symlink(self.read_backuped_lnk(), self.source_path )
+            self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        else:
+            self.store.incIndex(self.side_dict['hash'])
 
 class StoreRawFile(StoreFile, file):
 
@@ -602,16 +629,19 @@ class StoreDeltaFile(StoreFile, file):
         temp.seek(0)
         return temp
 
-    def recover(self, block_size = constants.CONST_BLOCK_SIZE):
+    def recover(self, buildingDB = False, block_size = constants.CONST_BLOCK_SIZE):
         # reverse file_copy()
-        with self.get_patched_file(self.side_dict['hash']) as TF:
-            #recovery_file = os.path.join(self.source_path)#name)
-            with open(self.source_path, "wb") as RF:
-                while True:
-                    block = TF.read(block_size)
-                    RF.write(block)
-                    if not block:
-                        break
-                RF.close()
-            TF.close()
-        self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        if not buildingDB:
+            with self.get_patched_file(self.side_dict['hash']) as TF:
+                #recovery_file = os.path.join(self.source_path)#name)
+                with open(self.source_path, "wb") as RF:
+                    while True:
+                        block = TF.read(block_size)
+                        RF.write(block)
+                        if not block:
+                            break
+                    RF.close()
+                TF.close()
+            self.recovery_stat(self.source_path, self.side_dict['lstat'])
+        else:
+            self.store.incIndex(self.side_dict['hash'])

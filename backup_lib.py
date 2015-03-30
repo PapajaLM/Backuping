@@ -17,8 +17,7 @@ class Backup():
         self.source_path = source_path
         self.store = store
         #self.backup_time = existing_backup.max_time # napr. 2012-12-12T12:12 / v tedy sa pouzije namiesot self.time
-                
-                
+
     def get_time(self):
         return datum.now().strftime('%Y-%m-%dT%H:%M:%S')
 
@@ -46,7 +45,6 @@ class Backup():
             LF.close()
         return time
 
-    
     def backup(self):
         # New Backup
         pass
@@ -104,13 +102,13 @@ class ExistingBackup(Backup):
     # self.name obsahuje teraz 2013-29.... zaloha ktoru chcem obnovit
     # self.source - urcuje miesto kam chcem zalohu obnovit
     
-    def recovery_backup(self):
+    def recovery_backup(self, buildingDB = False):
         from store import StoreObject
         #max_time = self.get_latest_time(self.target)
         side_dict = self.get_backup(self.backup_time)
         #print side_dict
         recovery_obj = StoreObject.create(self.source_path, self.store, side_dict)
-        recovery_obj.recover()
+        recovery_obj.recover(buildingDB)
 
         
 class BackupObject():
