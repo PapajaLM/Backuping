@@ -7,6 +7,7 @@ from stat import *
 from backup_lib import BackupObject
 from backup_lib import verbose
 from backup_lib import objects_init
+from store import StoreDir
 
 class SourceObject(BackupObject):
 
@@ -81,6 +82,7 @@ class SourceFile(SourceObject):
                     else:
                         if verbose : print("File Novy object zalohy.")
                         hash = self.save_file(self.target_object.side_dict['hash'])
+                        self.store.incIndex(hash)
                         return self.make_side_dict(hash)
             else:
                 if verbose : print("Lnk mTime zmeneny. rovnake meta")
@@ -89,6 +91,7 @@ class SourceFile(SourceObject):
         else:
             if verbose : print("File Novy object zalohy.")
             hash = self.save_file()
+            self.store.incIndex(hash)
             return self.make_side_dict(hash)
 
 
@@ -100,6 +103,11 @@ class SourceDir(SourceObject):
         SourceObject.__init__(self, source_path, store, lstat, target_object)
         if self.target_object != None: print(self.target_object.side_dict)
 
+    def make_side_dict(self, hash, content):
+        return { 'lstat': self.lstat,
+                 'hash': hash,
+                 'content': content}
+
     #REFACTORED
     def pickling(self, input_dict):
         pi = pickle.dumps(input_dict)
@@ -107,7 +115,14 @@ class SourceDir(SourceObject):
         if (self.target_object == None
             or not os.path.exists(self.store.get_object_path(hash_name))): #or ...hashe sa nerovnaju...:
             self.store.save_directory(pi, hash_name)
+        self.store.incIndex(hash_name)
         return hash_name
+
+    def comp(self, list1, list2):
+        for val in list1:
+            if val in list2:
+                return True
+        return False
 
     def backup(self):
         #Metoda SourceDir.incremental_backup() je zmatocna.
@@ -123,17 +138,20 @@ class SourceDir(SourceObject):
             next_path = os.path.join(self.source_path, F)
             if self.target_object != None:
                 st_mode = os.stat(next_path)[ST_MODE]
-                print "Hladam stary file: " + F
                 oldF = self.target_object.get_object(F, st_mode)
             else:
                 oldF = None
+            if self.target_object != None and self.target_object.file_name != "" and isinstance(self.target_object, StoreDir) and os.path.isdir(self.source_path):
+                if self.comp(self.target_object.side_dict['content'], os.listdir(self.source_path)) and os.path.basename(self.source_path) == self.target_object.file_name:
+                    return self.target_object.side_dict
             new_object = SourceObject.create(next_path, self.store, oldF)
             if new_object != None:
                 side_dict = new_object.backup()
                 main_dict[F] = side_dict
         #print main_dict
         hash = self.pickling(main_dict)
-        return self.make_side_dict(hash)
+        return self.make_side_dict(hash, os.listdir(self.source_path))
+
 
 class SourceLnk(SourceObject):
 

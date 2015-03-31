@@ -130,6 +130,9 @@ class BackupObject():
         self.source_dir = os.path.dirname(source_path)
         self.file_name = os.path.basename(source_path)
 
+    def get_file_name(self):
+        return self.file_name
+
     def make_side_dict(self, hash):
         return { 'lstat': self.lstat,
                  'hash': hash }

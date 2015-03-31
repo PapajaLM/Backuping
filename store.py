@@ -332,17 +332,20 @@ class Store():
             self.db.update(element)
         except RecordNotFound:
             self.db.insert({'hash':hash, 'pointer':1})
-        return
+            return 1
+        return element['pointer']
 
     def decIndex(self, hash):
         try:
             element = self.db.get('hash', hash, with_doc=True)
             element = element['doc']
             element['pointer'] = element['pointer'] - 1
+            print element
             self.db.update(element)
         except RecordNotFound:
-            self.db.insert({'hash':hash, 'pointer':1})
-        return
+            print "record not found: " + hash
+            return -1
+        return element['pointer']
 
     def rebuildDB(self):
         self.db.destroy()
@@ -352,15 +355,20 @@ class Store():
             tmp = ExistingBackup('', self, backup)
             tmp.recovery_backup(True)
 
-    def deleteFile(self, hash):
-        header_path = self.get_object_header_path(hash)
-        object_path = self.get_object_path(hash)
-        os.remove(header_path)
-        os.remove(object_path)
+    def removeFile(self, hash):
+        index = self.decIndex(hash)
+        print index
+        if self.decIndex(hash) == 0:
+            return
+            # zapis do zurnalu
+            # header_path = self.get_object_header_path(hash)
+            # object_path = self.get_object_path(hash)
+            # os.remove(header_path)
+            # os.remove(object_path)
 
     def removeBackup(self, time):
-        pass
-
+        backup = ExistingBackup('', self, time).get_root_object()
+        backup.remove()
 
 
 class StoreObject(BackupObject):
@@ -410,6 +418,12 @@ class StoreObject(BackupObject):
         #print self.side_dict
         #print self.name
 
+    def remove(self):
+        print "som v remove StoreObjectu: "
+        print self.side_dict
+        self.store.removeFile(self.side_dict['hash'])
+
+
 class StoreFile(StoreObject):
 
     def __init__(self, source_path, store, lstat, side_dict):
@@ -451,14 +465,15 @@ class StoreDir(StoreObject):
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
         #print self.side_dict
 
+    def get_file_name(self):
+        return self.object
+
     def get_object(self, name, st_mode):
         # zisti, ci objekt "name" existuje v zalohovanej verzii
         # tohto adresara
         # ak ano, vyrobi prislusny TargetObject
         # ak nie, vrati None
         if name in self.loaded_dict and self.loaded_dict[name]['lstat'].st_mode == st_mode:
-            print "Loaded_dict je: "
-            print self.loaded_dict
             if ('object_' + name) in self.loaded_obj:
                 return self.loaded_obj['object_' + name]
             else:
@@ -509,12 +524,19 @@ class StoreDir(StoreObject):
         # if IS_REG(self.side_dict[key]['lstat'].st_mode):
         if not buildingDB and not os.path.exists(self.source_path):
             os.mkdir(self.source_path)
+        print self.loaded_dict
         for store_object_name in self.loaded_dict.iterkeys():
-            new_store_object = self.get_object(store_object_name)
+            new_store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
             new_store_object.recover(buildingDB)#os.path.join(self.source_path, target_object_name))
         # obnovit metadata adresara!!!!!!!!!!!
         if not buildingDB:
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
+
+    def remove(self):
+        for store_object_name in self.loaded_dict.iterkeys():
+            store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
+            store_object.remove()
+        # vymazat aj samotnu zlozku
 
 class StoreLnk(StoreObject):
 
