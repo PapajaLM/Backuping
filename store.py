@@ -113,6 +113,9 @@ class Store():
         object_header_path = os.path.join(self.get_journal_path(), "objects")
         return os.path.join(object_header_path, hash + ".meta")
 
+    def get_backups_path(self):
+        return os.path.join(self.store_path, "backups")
+
     def get_latest_path(self):
         latest_tmp_path = os.path.join(self.store_path, "backups")
         return os.path.join(latest_tmp_path, "latest")
@@ -157,13 +160,14 @@ class Store():
             TF.close()
 
     def finish_journal(self):
-        journal_file = open(os.path.join(self.get_journal_path(), "journal_incomplete"), "r+")
-        uniqlines = set(journal_file.readlines())
-        journal_file.close()
-        journal_file = open(os.path.join(self.get_journal_path(), "journal_incomplete"), "w")
-        journal_file.writelines(uniqlines)
-        journal_file.close()
-        self.file_rename(os.path.join(self.get_journal_path(), "journal_incomplete"), "journal_complete")
+        if os.path.exists(os.path.join(self.get_journal_path(), "journal_incomplete")):
+            journal_file = open(os.path.join(self.get_journal_path(), "journal_incomplete"), "r+")
+            uniqlines = set(journal_file.readlines())
+            journal_file.close()
+            journal_file = open(os.path.join(self.get_journal_path(), "journal_incomplete"), "w")
+            journal_file.writelines(uniqlines)
+            journal_file.close()
+            self.file_rename(os.path.join(self.get_journal_path(), "journal_incomplete"), "journal_complete")
 
     def commit(self):
         print("Committing Journal")
@@ -341,7 +345,10 @@ class Store():
             element = element['doc']
             element['pointer'] = element['pointer'] - 1
             print element
-            self.db.update(element)
+            if element['pointer'] == 0:
+                self.db.delete(element)
+            else:
+                self.db.update(element)
         except RecordNotFound:
             print "record not found: " + hash
             return -1
@@ -355,20 +362,29 @@ class Store():
             tmp = ExistingBackup('', self, backup)
             tmp.recovery_backup(True)
 
-    def removeFile(self, hash):
+    def removeObject(self, hash):
         index = self.decIndex(hash)
-        print index
-        if self.decIndex(hash) == 0:
-            return
-            # zapis do zurnalu
-            # header_path = self.get_object_header_path(hash)
-            # object_path = self.get_object_path(hash)
-            # os.remove(header_path)
-            # os.remove(object_path)
+        if index == 0:
+            self.write_to_journal("remove " + self.get_object_path(hash))
+            self.write_to_journal("remove " + self.get_object_header_path(hash))
 
     def removeBackup(self, time):
-        backup = ExistingBackup('', self, time).get_root_object()
+        backup = ExistingBackup("", self, time).get_root_object()
         backup.remove()
+        os.remove(self.get_backup_path(time))
+        newest = self.getNewestBackupTime()
+        if newest != None:
+            self.save_data(self.get_journal_latest_path(), newest)
+        self.finish_journal()
+        self.commit()
+
+    def getNewestBackupTime(self):
+        backups_path = self.get_backups_path()
+        backups = sorted(os.listdir(backups_path))
+        backups.remove("latest")
+        if len(backups) > 0:
+            return backups[len(backups) - 1]
+        return None
 
 
 class StoreObject(BackupObject):
@@ -419,9 +435,7 @@ class StoreObject(BackupObject):
         #print self.name
 
     def remove(self):
-        print "som v remove StoreObjectu: "
-        print self.side_dict
-        self.store.removeFile(self.side_dict['hash'])
+        self.store.removeObject(self.side_dict['hash'])
 
 
 class StoreFile(StoreObject):
@@ -536,7 +550,11 @@ class StoreDir(StoreObject):
         for store_object_name in self.loaded_dict.iterkeys():
             store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
             store_object.remove()
-        # vymazat aj samotnu zlozku
+        self.store.removeObject(self.side_dict['hash'])
+
+    def incIndex(self):
+        for store_object_name in self.loaded_dict.iterkeys():
+            self.store.incIndex(self.loaded_dict[store_object_name]['hash'])
 
 class StoreLnk(StoreObject):
 
@@ -667,3 +685,13 @@ class StoreDeltaFile(StoreFile, file):
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
         else:
             self.store.incIndex(self.side_dict['hash'])
+
+    def remove(self):
+        list = self.get_list_of_hashes(self.side_dict['hash'])
+        for hash in list:
+            self.store.removeObject(hash)
+
+    def incIndex(self):
+        list = self.get_list_of_hashes(self.side_dict['hash'])
+        for hash in list:
+            self.store.incIndex(hash)

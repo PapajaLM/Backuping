@@ -7,7 +7,7 @@ from stat import *
 from backup_lib import BackupObject
 from backup_lib import verbose
 from backup_lib import objects_init
-from store import StoreDir
+from store import StoreDir, StoreDeltaFile, StoreFile
 
 class SourceObject(BackupObject):
 
@@ -83,6 +83,12 @@ class SourceFile(SourceObject):
                         if verbose : print("File Novy object zalohy.")
                         hash = self.save_file(self.target_object.side_dict['hash'])
                         self.store.incIndex(hash)
+                        if isinstance(self.target_object, StoreDeltaFile):
+                            print "je StoreDelta a zlozity inc"
+                            self.target_object.incIndex()
+                        elif isinstance(self.target_object, StoreFile):
+                            print "je StoreFile a jednoduchy inc"
+                            self.store.incIndex(self.target_object.side_dict['hash'])
                         return self.make_side_dict(hash)
             else:
                 if verbose : print("Lnk mTime zmeneny. rovnake meta")
@@ -143,6 +149,8 @@ class SourceDir(SourceObject):
                 oldF = None
             if self.target_object != None and self.target_object.file_name != "" and isinstance(self.target_object, StoreDir) and os.path.isdir(self.source_path):
                 if self.comp(self.target_object.side_dict['content'], os.listdir(self.source_path)) and os.path.basename(self.source_path) == self.target_object.file_name:
+                    self.store.incIndex(self.target_object.side_dict['hash'])
+                    self.target_object.incIndex()
                     return self.target_object.side_dict
             new_object = SourceObject.create(next_path, self.store, oldF)
             if new_object != None:
