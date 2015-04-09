@@ -437,6 +437,9 @@ class StoreObject(BackupObject):
     def remove(self):
         self.store.removeObject(self.side_dict['hash'])
 
+    def incIndex(self):
+        self.store.incIndex(self.side_dict['hash'])
+
 
 class StoreFile(StoreObject):
 
@@ -554,7 +557,10 @@ class StoreDir(StoreObject):
 
     def incIndex(self):
         for store_object_name in self.loaded_dict.iterkeys():
-            self.store.incIndex(self.loaded_dict[store_object_name]['hash'])
+            store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
+            # self.store.incIndex(self.loaded_dict[store_object_name]['hash'])
+            store_object.incIndex()
+        self.store.incIndex(self.side_dict['hash'])
 
 class StoreLnk(StoreObject):
 
