@@ -16,14 +16,14 @@ class SourceObject(BackupObject):
         lstat = os.lstat(source_path)
         mode = lstat.st_mode
         if S_ISDIR(mode):
-                return SourceDir(source_path, store, lstat, target_object)
+            return SourceDir(source_path, store, lstat, target_object)
         elif S_ISREG(mode):
-                return SourceFile(source_path, store, lstat, target_object)
+            return SourceFile(source_path, store, lstat, target_object)
         elif S_ISLNK(mode):
-                return SourceLnk(source_path, store, lstat, target_object)
+            return SourceLnk(source_path, store, lstat, target_object)
         else:
-                # Unknown file
-                return None
+            # Unknown file
+            return None
 
     def __init__(self, source_path, store, lstat, target_object):
         #if objects_init : print "Initializing SourceFile (%s)" % source_path
@@ -84,10 +84,8 @@ class SourceFile(SourceObject):
                         hash = self.save_file(self.target_object.side_dict['hash'])
                         self.store.incIndex(hash)
                         if isinstance(self.target_object, StoreDeltaFile):
-                            print "je StoreDelta a zlozity inc"
                             self.target_object.incIndex()
                         elif isinstance(self.target_object, StoreFile):
-                            print "je StoreFile a jednoduchy inc"
                             self.store.incIndex(self.target_object.side_dict['hash'])
                         return self.make_side_dict(hash)
             else:
@@ -147,9 +145,6 @@ class SourceDir(SourceObject):
                 oldF = self.target_object.get_object(F, st_mode)
             else:
                 oldF = None
-            if self.target_object != None:
-                print "Store ma meno: " + self.target_object.file_name
-                print "Source ma meno: " + os.path.basename(self.source_path) + " alebo path: " + self.source_path
             if self.target_object != None and self.target_object.file_name != "" and isinstance(self.target_object, StoreDir) and os.path.isdir(self.source_path):
                 if self.comp(self.target_object.side_dict['content'], os.listdir(self.source_path)) and os.path.basename(self.source_path) == self.target_object.file_name:
                     self.target_object.incIndex()

@@ -427,7 +427,7 @@ class StoreObject(BackupObject):
             pass # doplnit printy / handle exceptetion
 
     def __init__(self, source_path, store, lstat, side_dict):
-        if objects_init : print("Initializing TargetObject ", source_path)
+        if objects_init : print("Initializing StoreObject ", source_path)
         #print source_path
         BackupObject.__init__(self, source_path, store, lstat)
         self.side_dict = side_dict
@@ -444,7 +444,7 @@ class StoreObject(BackupObject):
 class StoreFile(StoreObject):
 
     def __init__(self, source_path, store, lstat, side_dict):
-        if objects_init : print("Initializing TargetFile (%s)") % source_path
+        if objects_init : print("Initializing StoreFile (%s)") % source_path
         #print source_path
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
 
@@ -471,7 +471,7 @@ class StoreDir(StoreObject):
     #do vhodnej instancnej premennej objektu triedy TargetDir napriklad v konstruktore.
     #Do tohto slovnika (nie do side_dict!) potom pristupuje metoda get_object().
     def __init__(self, source_path, store, lstat , side_dict):
-        if objects_init : print("Initializing TargetDir ", source_path)
+        if objects_init : print("Initializing StoreDir ", source_path)
         #print source_path
         #print target_path
         #print side_dict
@@ -618,10 +618,30 @@ class StoreDeltaFile(StoreFile, file):
     def __init__(self, source_path, store, lstat, side_dict, file_name):
         if objects_init : print("Initializing StoreDeltaFile (%s)") % source_path
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
-        if type(file_name) == file:
-            self.__dict__.update(file.__dict__)
-        else:
-            file.__init__(self, file_name)
+        # if type(file_name) == file:
+        #     self.__dict__.update(file.__dict__)
+        # else:
+        #     file.__init__(self, file_name)
+        self.patched_file = self.get_patched_file(self.side_dict['hash'])
+        # print self.__dict__.viewitems()
+        # print self.patched_file
+        # self.__dict__.update(self.patched_file.__dict__)
+            # self.close()
+
+    def open(self):
+        # file.__init__(self, self.name)
+        self.patched_file = self.get_patched_file(self.side_dict['hash'])
+
+    def read(self, size=None):
+        return self.patched_file.read(size)
+
+    def seek(self, offset, whence=None):
+        if self.patched_file.closed:
+             self.open()
+        self.patched_file.seek(offset)
+
+    def close(self):
+        self.patched_file.close()
 
     def get_previous_hash(self, hash):
         with self.store.get_object_file_header(hash, "rb") as THF:
