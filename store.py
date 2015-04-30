@@ -206,7 +206,7 @@ class Store():
                 deltaProcess = subprocess.Popen(['rdiff', 'delta', '-', source_path], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
                 deltaProcess.stdin.write(sig_data)
                 deltaProcess.stdin.close()
-                with open(target_file, "wb") as TF: #bol gzip
+                with gzip.open(target_file, "wb") as TF: #bol gzip
                     while True:
                         deltaData = deltaProcess.stdout.read(16)
                         if deltaData:
@@ -235,13 +235,9 @@ class Store():
                     self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".data"))
                     self.write_to_journal("move " + self.get_journal_object_header_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".meta"))
                 return file_hash.hexdigest()
-            # elif self.get_object_type(previous_hash) == "delta\n":
-            #
-            #     # treba zrekonstruovat subor, z neho si vypocitat signaturu a ulozit deltu k najnovsiemu
-            #     return
         else:
             with open(source_path, "rb") as SF:
-                with open(target_file, "wb") as TF: #bol gzip
+                with gzip.open(target_file, "wb") as TF: #bol gzip
                     while True:
                         block = SF.read(block_size)
                         file_hash.update(block)
@@ -298,6 +294,9 @@ class Store():
         self.write_to_journal("move " + BF.name + " " + os.path.join(self.store_path, "backups"))
 
     def get_object_file(self, hash, mode):
+        type = self.get_object_type(hash)
+        if type == "gz" or type == "delta":
+            return gzip.open(self.get_object_path(), mode)
         return open(self.get_object_path(hash), mode)
 
     def get_journal_object_file(self, hash, mode):
@@ -317,6 +316,18 @@ class Store():
 
     def get_object(self, source_path, hash, side_dict):
         return StoreObject.create(source_path, self, side_dict)
+
+    def get_unzipped_tempFile(self, hash, tempFile):
+        gzipFile = gzip.open(self.get_object_path(hash))
+        temp = open(tempFile.name, "w+")
+        while True:
+            block = gzipFile.read()
+            temp.write(block)
+            if not block:
+                break
+        temp.seek(0)
+        gzipFile.close()
+        return temp
 
     def get_hash(self, src_file, block_size = constants.CONST_BLOCK_SIZE):
         file_hash = hashlib.sha1()
@@ -598,20 +609,20 @@ class StoreRawFile(StoreFile, file):
             file.__init__(self, file_name)
 
 
-class StoreGzipFile(StoreFile, file):#gzip.GzipFile):
+class StoreGzipFile(StoreFile, gzip.GzipFile):#gzip.GzipFile):
 
     def __init__(self, source_path, store, lstat, side_dict, file_name):
         if objects_init : print("Initializing StoreGzipFile (%s)") % source_path
         StoreObject.__init__(self, source_path, store, lstat, side_dict)
-        if type(file_name) == file:#gzip.GzipFile:
-            self.__dict__.update(file.__dict__)
+        if type(file_name) == gzip.GzipFile:
+            self.__dict__.update(file_name.__dict__)
         else:
             # gzip.GzipFile.__init__(self, file_name)
-            file.__init__(self, file_name)
+            gzip.GzipFile.__init__(self, file_name)
             self.close()
 
     def open(self):
-        file.__init__(self, self.name)
+        gzip.GzipFile.__init__(self, self.name)
 
 class StoreDeltaFile(StoreFile, file):
 
@@ -677,17 +688,21 @@ class StoreDeltaFile(StoreFile, file):
         base_file_hash = list.pop()
         first = 1
         tempFile = tempfile.NamedTemporaryFile()
+        tempFile2 = tempfile.NamedTemporaryFile()
+        tempFile3 = tempfile.NamedTemporaryFile()
         temp = open(tempFile.name, "w+")
         while (len(list) > 0 or not first == 0):
             first = 0
             if not base_file_hash == None:
-                patchProcess = subprocess.Popen(['rdiff', 'patch', self.store.get_object_path(base_file_hash), self.store.get_object_path(list.pop()), '-'], stdout=subprocess.PIPE)
+                patchProcess = subprocess.Popen(['rdiff', 'patch', self.store.get_unzipped_tempFile(base_file_hash, tempFile2).name, self.store.get_unzipped_tempFile(list.pop(), tempFile3).name, '-'], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
                 base_file_hash = None
             else:
-                patchProcess = subprocess.Popen(['rdiff', 'patch', temp.name, self.store.get_object_path(list.pop()), '-'], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                patchProcess = subprocess.Popen(['rdiff', 'patch', temp.name, self.store.get_unzipped_tempFile(list.pop(), tempFile2).name, '-'], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
             patch, patchErr = patchProcess.communicate()
             temp.close()
             tempFile.close()
+            tempFile2.close()
+            tempFile3.close()
             if (patchErr is None):
                 tempFile = tempfile.NamedTemporaryFile()
                 temp = open(tempFile.name, "w+")
