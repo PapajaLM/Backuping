@@ -40,18 +40,18 @@ def print_help():
     print " --- Welcome in temporary Backuper quide ---"
     print ""
     print "Decsription" 
-    print "\t"+"Backuper is a backup tool, to backup and archiving your important files in safe and high efective way form one directory to another. A remote incremental backup of all your files could be easy as " + start + "backuper backup /path/to/source/directory /path/to/target/direcory" + end + " Backuper have two distinct purposes. The primary purpose is to recover data after its loss, be it by data deletion or corruption. Data loss can be a common experience of computer users. The secondary purpose of backuper is to recover data from an r data from an earlier time, according to a user-defined data retention policy "
+    print "\t"+"Backuper is a backup tool, to backup and archiving your important files in safe and high efective way form one directory to another. A remote incremental backup of all your files could be easy as " + start + "backuper backup /path/to/source/directory /path/to/store/direcory" + end + " Backuper have two distinct purposes. The primary purpose is to recover data after its loss, be it by data deletion or corruption. Data loss can be a common experience of computer users. The secondary purpose of backuper is to recover data from an r data from an earlier time, according to a user-defined data retention policy "
     print ""
     print "Usage" 
-    print "\t"+ " backuper" + start + " KEY "+ end + " source-dir target-dir" + start + " optinal settings " + end
+    print "\t"+ " backuper" + start + " KEY "+ end + " source-dir store-dir" + start + " optinal settings " + end
     print ""
     print "KEY-s"
     print "\t" + " --help " + " - show mannual"
     print "\t" + " --list " + "backups-dir" + " - show backups list "
-    print "\t" + "\t" + " oder in listed backups for example : backuper recover /source/repo /recover/target/ "
-    print "\t" + " init " + " source-dir  target-dir [ '--list']Made first initial backup, create objects an backups directory " + " default set as " + start + "lates" +end
-    print "\t" + " backup "  + " source-dir  target-dir ['--list'] " + " - Made incremental backups default set as " + "lates" 
-    print "\t" + " recover " + " source-dir  target-dir " + " - default set as " +  "lates"
+    print "\t" + "\t" + " oder in listed backups for example : backuper recover /source/repo /recover/store/ "
+    print "\t" + " init " + " source-dir  store-dir [ '--list']Made first initial backup, create objects an backups directory " + " default set as " + start + "lates" +end
+    print "\t" + " backup "  + " source-dir  store-dir ['--list'] " + " - Made incremental backups default set as " + "lates"
+    print "\t" + " recover " + " source-dir  store-dir " + " - default set as " +  "lates"
     print ""
     print "Optional settings" 
     print "\t"  + " list " + " - show list"
@@ -96,7 +96,7 @@ def check_dir(path):
 
 def check_backup(store_path, backup):
     # TODO Refactor to Store.backup_exists(backup)
-    backup_path = os.path.join(os.path.join(store_path,"target/backups"), backup)
+    backup_path = os.path.join(os.path.join(store_path,"store/backups"), backup)
     if os.path.exists(backup_path):
         return True
     print("{}: no such backup in {}".format(backup,store_path))
@@ -141,7 +141,7 @@ def main(argv):
         if os.path.exists(argv[2]):
             rebuild_backup(argv[2])
     elif argv[1] == "remove":
-        time_path = os.path.join(os.path.join(argv[2],"target/backups"), argv[3])
+        time_path = os.path.join(os.path.join(argv[2],"store/backups"), argv[3])
         if os.path.exists(argv[2]) and os.path.exists(time_path):
             remove_backup(argv[2], argv[3])
     elif "--help" in argv or "-h" in argv or "help" in argv:
@@ -169,7 +169,7 @@ def main(argv):
 
             elif argv[1] == "recover":
                 if os.path.exists(argv[3]) :
-                    time_path = os.path.join(os.path.join(argv[3],"target/backups"), default_time)
+                    time_path = os.path.join(os.path.join(argv[3],"store/backups"), default_time)
                     if os.path.exists(time_path):
                         recovery_backup(argv[2],argv[3], default_time)
                     else :
@@ -197,10 +197,10 @@ def main(argv):
                         if argv[4] == default_time:
                             incremental_backup(argv[2],argv[3], default_time)
                         elif argv[4] == "--list": # ak list vipis list
-                            print print_list(os.path.join(argv[3], "target/backups"))
+                            print print_list(os.path.join(argv[3], "store/backups"))
                         else :
                             #order = get_time(argv[4]) # ak dostane  123:457.... 
-                            time_path = os.path.join(os.path.join(argv[3],"target/backups"), argv[4])
+                            time_path = os.path.join(os.path.join(argv[3],"store/backups"), argv[4])
                             if os.path.exists(time_path):
                                 incremental_backup(argv[2],argv[3], argv[4])
                             else :
@@ -216,9 +216,9 @@ def main(argv):
                 if os.path.exists(argv[2]):
                     if os.path.exists(argv[3]):
                         if argv[4] == "--list":
-                            print print_list(os.path.join(argv[3], "target/backups"))
+                            print print_list(os.path.join(argv[3], "store/backups"))
                         else :
-                            time_path = os.path.join(os.path.join(argv[3],"target/backups"), argv[4])
+                            time_path = os.path.join(os.path.join(argv[3],"store/backups"), argv[4])
                             if os.path.exists(time_path):
                                 recovery_backup(argv[2],argv[3], argv[4])
                             else :

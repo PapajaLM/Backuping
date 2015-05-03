@@ -48,7 +48,7 @@ class WithPointerIndex(HashIndex):
 class Store():
 
     def __init__(self, pathname):
-        self.store_path = os.path.join(pathname, "target")
+        self.store_path = os.path.join(pathname, "store")
         self.init_store_db()
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
@@ -143,6 +143,7 @@ class Store():
                 print("Clearing Journal")
                 self.remove_incomplete_journal()
                 os.remove(os.path.join(journal_path, "journal_incomplete"))
+                self.rebuildDB()
                 return False
         return False
 
@@ -193,8 +194,8 @@ class Store():
 
     def save_file(self, source_path, name, previous_hash = None, block_size = constants.CONST_BLOCK_SIZE):
         file_hash = hashlib.sha1()
-        target_file = self.get_journal_object_path(name)
-        target_file_header = self.get_journal_object_header_path(name)
+        store_file = self.get_journal_object_path(name)
+        store_file_header = self.get_journal_object_header_path(name)
         if not previous_hash == None:
             previous_type = self.get_object_type(previous_hash)
             if previous_type == "gz\n" or previous_type == "delta\n" :
@@ -206,14 +207,14 @@ class Store():
                 deltaProcess = subprocess.Popen(['rdiff', 'delta', '-', source_path], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
                 deltaProcess.stdin.write(sig_data)
                 deltaProcess.stdin.close()
-                with gzip.open(target_file, "wb") as TF: #bol gzip
+                with gzip.open(store_file, "wb") as TF: #bol gzip
                     while True:
                         deltaData = deltaProcess.stdout.read(16)
                         if deltaData:
                             file_hash.update(deltaData)
                             TF.write(deltaData)
                         else:
-                             with open(target_file_header, "wb") as THF:
+                             with open(store_file_header, "wb") as THF:
                                 THF.write("delta\n")
                                 THF.write("signature\n")
                                 sigProcess = subprocess.Popen(['rdiff', 'signature', source_path], stdout=subprocess.PIPE)
@@ -228,8 +229,8 @@ class Store():
                                 THF.write("previous\n")
                                 THF.write(previous_hash)
                                 THF.close()
-                                self.file_rename(target_file, file_hash.hexdigest() + ".data")
-                                self.file_rename(target_file_header, file_hash.hexdigest() + ".meta")
+                                self.file_rename(store_file, file_hash.hexdigest() + ".data")
+                                self.file_rename(store_file_header, file_hash.hexdigest() + ".meta")
                                 break
                     TF.close()
                     self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".data"))
@@ -237,14 +238,14 @@ class Store():
                 return file_hash.hexdigest()
         else:
             with open(source_path, "rb") as SF:
-                with gzip.open(target_file, "wb") as TF: #bol gzip
+                with gzip.open(store_file, "wb") as TF: #bol gzip
                     while True:
                         block = SF.read(block_size)
                         file_hash.update(block)
                         TF.write(block)
                         if not block:
-                            self.file_rename(target_file, file_hash.hexdigest() + ".data")
-                            with open(target_file_header, "wb") as THF:
+                            self.file_rename(store_file, file_hash.hexdigest() + ".data")
+                            with open(store_file_header, "wb") as THF:
                                 THF.write("gz\n")
                                 THF.write("signature\n")
                                 sigProcess = subprocess.Popen(['rdiff', 'signature', source_path], stdout=subprocess.PIPE)
@@ -255,7 +256,7 @@ class Store():
                                     THF.write(signature)
                                 else:
                                     THF.write(str(0))
-                                self.file_rename(target_file_header, file_hash.hexdigest() + ".meta")
+                                self.file_rename(store_file_header, file_hash.hexdigest() + ".meta")
                                 THF.close()
                             break
                     TF.close()
@@ -295,8 +296,8 @@ class Store():
 
     def get_object_file(self, hash, mode):
         type = self.get_object_type(hash)
-        if type == "gz" or type == "delta":
-            return gzip.open(self.get_object_path(), mode)
+        if type == "gz\n" or type == "delta\n":
+            return gzip.open(self.get_object_path(hash), mode)
         return open(self.get_object_path(hash), mode)
 
     def get_journal_object_file(self, hash, mode):
@@ -381,6 +382,7 @@ class Store():
 
     def removeBackup(self, time):
         backup = ExistingBackup("", self, time).get_root_object()
+        self.store.is_journal_complete()
         backup.remove()
         os.remove(self.get_backup_path(time))
         newest = self.getNewestBackupTime()
@@ -501,13 +503,13 @@ class StoreDir(StoreObject):
         # tohto adresara
         # ak ano, vyrobi prislusny TargetObject
         # ak nie, vrati None
-        if name in self.loaded_dict and self.loaded_dict[name]['lstat'].st_mode == st_mode:
+        if name in self.loaded_dict and S_IFMT(self.loaded_dict[name]['lstat'].st_mode) == S_IFMT(st_mode):
             if ('object_' + name) in self.loaded_obj:
                 return self.loaded_obj['object_' + name]
             else:
-                new_target_object = StoreObject.create(os.path.join(self.source_path, name), self.store, self.loaded_dict[name])
-                self.loaded_obj['object_' + name] = new_target_object
-                return new_target_object
+                new_store_object = StoreObject.create(os.path.join(self.source_path, name), self.store, self.loaded_dict[name])
+                self.loaded_obj['object_' + name] = new_store_object
+                return new_store_object
         else:
             return None
 
@@ -633,7 +635,7 @@ class StoreDeltaFile(StoreFile, file):
         #     self.__dict__.update(file.__dict__)
         # else:
         #     file.__init__(self, file_name)
-        self.patched_file = self.get_patched_file(self.side_dict['hash'])
+        # self.patched_file = self.get_patched_file(self.side_dict['hash'])
         # print self.__dict__.viewitems()
         # print self.patched_file
         # self.__dict__.update(self.patched_file.__dict__)
@@ -650,6 +652,12 @@ class StoreDeltaFile(StoreFile, file):
         if self.patched_file.closed:
              self.open()
         self.patched_file.seek(offset)
+
+    @property
+    def closed(self):
+        if self.patched_file != None:
+            return self.patched_file.closed
+        return True
 
     def close(self):
         self.patched_file.close()
