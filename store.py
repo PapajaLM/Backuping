@@ -49,6 +49,7 @@ class Store():
 
     def __init__(self, pathname):
         self.store_path = os.path.join(pathname, "store")
+        self.objects_counter = {}
         self.init_store_db()
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
@@ -81,7 +82,6 @@ class Store():
         else:
             self.db.open()
 
-
     def get_path(self):
         return self.store_path #volania napr. BackupObject.new...(... , target.get_path())
 
@@ -98,18 +98,30 @@ class Store():
         return os.path.join(backup_path, backup_name)
 
     def get_object_path(self, hash):
-        object_path = os.path.join(self.store_path, "objects")
+        object_path = os.path.join(self.store_path, "objects", hash[:2])
         return os.path.join(object_path, hash + ".data")
 
     def get_journal_object_path(self, hash):
+        object_path = os.path.join(self.get_journal_path(), "objects", hash[:2])
+        if not os.path.exists(object_path):
+            os.mkdir(object_path)
+        return os.path.join(object_path, hash + ".data")
+
+    def get_journal_tmp_object_path(self, hash):
         object_path = os.path.join(self.get_journal_path(), "objects")
         return os.path.join(object_path, hash + ".data")
 
     def get_object_header_path(self, hash):
-        object_header_path = os.path.join(self.store_path, "objects")
+        object_header_path = os.path.join(self.store_path, "objects", hash[:2])
         return os.path.join(object_header_path, hash + ".meta")
 
     def get_journal_object_header_path(self, hash):
+        object_header_path = os.path.join(self.get_journal_path(), "objects", hash[:2])
+        if not os.path.exists(object_header_path):
+            os.mkdir(object_header_path)
+        return os.path.join(object_header_path, hash + ".meta")
+
+    def get_journal_tmp_object_header_path(self, hash):
         object_header_path = os.path.join(self.get_journal_path(), "objects")
         return os.path.join(object_header_path, hash + ".meta")
 
@@ -161,6 +173,11 @@ class Store():
             TF.close()
 
     def finish_journal(self):
+        for key, value in self.objects_counter.iteritems():
+                if value["operation"] == "update" and value["value"] == 0:
+                    self.removeObject(key)
+                else:
+                    self.write_to_journal(value["operation"] + " " + key + " " + str(value["value"]))
         if os.path.exists(os.path.join(self.get_journal_path(), "journal_incomplete")):
             journal_file = open(os.path.join(self.get_journal_path(), "journal_incomplete"), "r+")
             uniqlines = set(journal_file.readlines())
@@ -180,22 +197,45 @@ class Store():
                 for command in TF:
                     words = command.split()
                     if (words[0] == "move"):
+                        file_path, file_name = os.path.split(words[2])
+                        if not os.path.exists(file_path):
+                            os.mkdir(file_path)
                         shutil.move(words[1], words[2])
                         #os.rename(words[1], words[2])
                     elif (words[0] == "remove"):
                         os.remove(words[1])
+                    elif (words[0] == "insert"):
+                        self.db.insert({'hash':words[1], 'pointer':int(words[2])})
+                    elif (words[0] == "update"):
+                        element = self.db.get('hash', words[1], with_doc=True)
+                        element = element['doc']
+                        element['pointer'] = int(words[2])
+                        self.db.update(element)
+                    elif (words[0] == "delete"):
+                        element = self.db.get('hash', words[1], with_doc=True)
+                        element = element['doc']
+                        self.db.delete(element)
                 TF.close()
             os.remove(os.path.join(journal_path, "journal_complete"))
+            journal_objects_path = os.path.join(journal_path, "objects")
+            shutil.rmtree(journal_objects_path)
+            os.mkdir(journal_objects_path)
 
     @staticmethod
     def file_rename(old_name, new_name):
         new_file_name = os.path.join(os.path.dirname(old_name), new_name)
         os.rename(old_name, new_file_name)
 
+    def file_move(self, old_name, new_name):
+        tmp = os.path.join(self.get_journal_path(), "objects", new_name[:2])
+        if (not os.path.exists(tmp)):
+            os.mkdir(tmp)
+        os.rename(old_name, os.path.join(tmp, new_name))
+
     def save_file(self, source_path, name, previous_hash = None, block_size = constants.CONST_BLOCK_SIZE):
         file_hash = hashlib.sha1()
-        store_file = self.get_journal_object_path(name)
-        store_file_header = self.get_journal_object_header_path(name)
+        store_file = self.get_journal_tmp_object_path(name)
+        store_file_header = self.get_journal_tmp_object_header_path(name)
         if not previous_hash == None:
             previous_type = self.get_object_type(previous_hash)
             if previous_type == "gz\n" or previous_type == "delta\n" :
@@ -229,12 +269,12 @@ class Store():
                                 THF.write("previous\n")
                                 THF.write(previous_hash)
                                 THF.close()
-                                self.file_rename(store_file, file_hash.hexdigest() + ".data")
-                                self.file_rename(store_file_header, file_hash.hexdigest() + ".meta")
+                                self.file_move(store_file, file_hash.hexdigest() + ".data")
+                                self.file_move(store_file_header, file_hash.hexdigest() + ".meta")
                                 break
                     TF.close()
-                    self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".data"))
-                    self.write_to_journal("move " + self.get_journal_object_header_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".meta"))
+                    self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest()[:2], file_hash.hexdigest() + ".data"))
+                    self.write_to_journal("move " + self.get_journal_object_header_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest()[:2], file_hash.hexdigest() + ".meta"))
                 return file_hash.hexdigest()
         else:
             with open(source_path, "rb") as SF:
@@ -244,7 +284,7 @@ class Store():
                         file_hash.update(block)
                         TF.write(block)
                         if not block:
-                            self.file_rename(store_file, file_hash.hexdigest() + ".data")
+                            self.file_move(store_file, file_hash.hexdigest() + ".data")
                             with open(store_file_header, "wb") as THF:
                                 THF.write("gz\n")
                                 THF.write("signature\n")
@@ -256,12 +296,12 @@ class Store():
                                     THF.write(signature)
                                 else:
                                     THF.write(str(0))
-                                self.file_rename(store_file_header, file_hash.hexdigest() + ".meta")
+                                self.file_move(store_file_header, file_hash.hexdigest() + ".meta")
                                 THF.close()
                             break
                     TF.close()
-                    self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".data"))
-                    self.write_to_journal("move " + self.get_journal_object_header_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest() + ".meta"))
+                    self.write_to_journal("move " + self.get_journal_object_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest()[:2], file_hash.hexdigest() + ".data"))
+                    self.write_to_journal("move " + self.get_journal_object_header_path(file_hash.hexdigest()) + " " + os.path.join(self.store_path, "objects", file_hash.hexdigest()[:2], file_hash.hexdigest() + ".meta"))
                 SF.close()
             return file_hash.hexdigest()
 
@@ -272,8 +312,8 @@ class Store():
                 DF.write(pi)
                 DF.close()
                 DHF.close()
-        self.write_to_journal("move " + DF.name + " " + os.path.join(self.store_path, "objects", hash_name + ".data"))
-        self.write_to_journal("move " + DHF.name + " " + os.path.join(self.store_path, "objects", hash_name + ".meta"))
+        self.write_to_journal("move " + DF.name + " " + os.path.join(self.store_path, "objects", hash_name[:2], hash_name + ".data"))
+        self.write_to_journal("move " + DHF.name + " " + os.path.join(self.store_path, "objects", hash_name[:2], hash_name + ".meta"))
 
     def save_link(self, link, hash_name):
         with self.get_journal_object_file(hash_name.hexdigest(), "wb") as DF:
@@ -285,8 +325,8 @@ class Store():
                 DF.write(link)
                 DHF.close()
             DF.close()
-        self.write_to_journal("move " + DF.name + " " + os.path.join(self.store_path, "objects", hash_name.hexdigest() + ".data"))
-        self.write_to_journal("move " + DHF.name + " " + os.path.join(self.store_path, "objects", hash_name.hexdigest() + ".meta"))
+        self.write_to_journal("move " + DF.name + " " + os.path.join(self.store_path, "objects", hash_name.hexdigest()[:2], hash_name.hexdigest() + ".data"))
+        self.write_to_journal("move " + DHF.name + " " + os.path.join(self.store_path, "objects", hash_name.hexdigest()[:2], hash_name.hexdigest() + ".meta"))
 
     def save_data(self, file_name, data):
         with open(file_name, "wb") as BF:
@@ -341,30 +381,43 @@ class Store():
         return file_hash.hexdigest()
 
     def incIndex(self, hash):
-        try:
-            element = self.db.get('hash', hash, with_doc=True)
-            element = element['doc']
-            element['pointer'] = element['pointer'] + 1
-            self.db.update(element)
-        except RecordNotFound:
-            self.db.insert({'hash':hash, 'pointer':1})
-            return 1
-        return element['pointer']
+        if hash in self.objects_counter:
+            self.objects_counter[hash]["value"] = self.objects_counter[hash]["value"] + 1
+            return self.objects_counter[hash]["value"]
+        else:
+            try:
+                element = self.db.get('hash', hash, with_doc=True)
+                element = element['doc']
+                self.objects_counter[hash] = {"value":element['pointer'] + 1, "operation":"update"}
+                return element['pointer'] + 1
+            except RecordNotFound:
+                self.objects_counter[hash] = {"value":1, "operation":"insert"}
+                return 1
 
     def decIndex(self, hash):
-        try:
-            element = self.db.get('hash', hash, with_doc=True)
-            element = element['doc']
-            element['pointer'] = element['pointer'] - 1
-            print element
-            if element['pointer'] == 0:
-                self.db.delete(element)
-            else:
-                self.db.update(element)
-        except RecordNotFound:
-            print "record not found: " + hash
-            return -1
-        return element['pointer']
+        if hash in self.objects_counter:
+            self.objects_counter[hash]["value"] = self.objects_counter[hash]["value"] - 1
+            return self.objects_counter[hash]["value"]
+        else:
+            try:
+                element = self.db.get('hash', hash, with_doc=True)
+                element = element['doc']
+                self.objects_counter[hash] = {"value":element['pointer'] - 1, "operation":"update"}
+                return element['pointer'] - 1
+            except RecordNotFound:
+                return
+
+    def getIndex(self, hash):
+        if hash in self.objects_counter:
+            return self.objects_counter[hash]["value"]
+        else:
+            try:
+                element = self.db.get('hash', hash, with_doc=True)
+                element = element['doc']
+                return element['pointer']
+            except RecordNotFound:
+                return 0
+
 
     def rebuildDB(self):
         self.db.destroy()
@@ -375,14 +428,13 @@ class Store():
             tmp.recovery_backup(True)
 
     def removeObject(self, hash):
-        index = self.decIndex(hash)
-        if index == 0:
-            self.write_to_journal("remove " + self.get_object_path(hash))
-            self.write_to_journal("remove " + self.get_object_header_path(hash))
+        self.write_to_journal("remove " + self.get_object_path(hash))
+        self.write_to_journal("remove " + self.get_object_header_path(hash))
+        self.write_to_journal("delete " + hash)
 
     def removeBackup(self, time):
         backup = ExistingBackup("", self, time).get_root_object()
-        self.store.is_journal_complete()
+        self.is_journal_complete()
         backup.remove()
         os.remove(self.get_backup_path(time))
         newest = self.getNewestBackupTime()
@@ -448,7 +500,7 @@ class StoreObject(BackupObject):
         #print self.name
 
     def remove(self):
-        self.store.removeObject(self.side_dict['hash'])
+        self.store.decIndex(self.side_dict['hash'])
 
     def incIndex(self):
         self.store.incIndex(self.side_dict['hash'])
@@ -475,8 +527,8 @@ class StoreFile(StoreObject):
                     RF.close()
                 TF.close()
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
-        else:
-            self.store.incIndex(self.side_dict['hash'])
+        # else:
+        #     self.store.incIndex(self.side_dict['hash'])
 
 class StoreDir(StoreObject):
 
@@ -558,15 +610,18 @@ class StoreDir(StoreObject):
         for store_object_name in self.loaded_dict.iterkeys():
             new_store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
             new_store_object.recover(buildingDB)#os.path.join(self.source_path, target_object_name))
+            if buildingDB:
+                self.store.incIndex(store_object_name)
         # obnovit metadata adresara!!!!!!!!!!!
         if not buildingDB:
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
 
     def remove(self):
-        for store_object_name in self.loaded_dict.iterkeys():
-            store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
-            store_object.remove()
-        self.store.removeObject(self.side_dict['hash'])
+        index = self.store.decIndex(self.side_dict['hash'])
+        if index == 0:
+            for store_object_name in self.loaded_dict.iterkeys():
+                store_object = self.get_object(store_object_name, self.loaded_dict[store_object_name]['lstat'].st_mode)
+                store_object.remove()
 
     def incIndex(self):
         for store_object_name in self.loaded_dict.iterkeys():
@@ -597,8 +652,9 @@ class StoreLnk(StoreObject):
         if not buildingDB:
             os.symlink(self.read_backuped_lnk(), self.source_path )
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
-        else:
-            self.store.incIndex(self.side_dict['hash'])
+        # else:
+        #     self.store.incIndex(self.side_dict['hash'])
+
 
 class StoreRawFile(StoreFile, file):
 
@@ -733,12 +789,11 @@ class StoreDeltaFile(StoreFile, file):
                 TF.close()
             self.recovery_stat(self.source_path, self.side_dict['lstat'])
         else:
-            self.store.incIndex(self.side_dict['hash'])
+            self.store.incIndex(self.get_previous_hash(self.side_dict['hash']))
 
     def remove(self):
-        list = self.get_list_of_hashes(self.side_dict['hash'])
-        for hash in list:
-            self.store.removeObject(hash)
+        self.store.decIndex(self.side_dict['hash'])
+        self.store.decIndex(self.get_previous_hash(self.side_dict['hash']))
 
     def incIndex(self):
         list = self.get_list_of_hashes(self.side_dict['hash'])
