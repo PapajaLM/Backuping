@@ -139,11 +139,10 @@ class SourceDir(SourceObject):
                 side_dict = new_object.backup()
                 main_dict[F] = side_dict
         #print main_dict
-        # if self.store_object != None and self.store_object.file_name != "" and isinstance(self.store_object, StoreDir):
-        #         if self.store_object.side_dict['hash'] == self.get_hash(main_dict):
-        #             self.store.incIndex(self.store_object.side_dict['hash'])
-        #             # self.store_object.incIndex()
-        #             return self.store_object.side_dict
+        if self.store_object != None and self.store_object.file_name != "" and isinstance(self.store_object, StoreDir):
+                if self.store_object.side_dict['hash'] == self.get_hash(main_dict):
+                    # self.store.incIndex(self.store_object.side_dict['hash'])
+                    return self.store_object.side_dict
         hash = self.pickling(main_dict)
         index = self.store.getIndex(hash)
         if index == 0:
