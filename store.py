@@ -97,6 +97,9 @@ class Store():
         backup_path = os.path.join(self.get_journal_path(), "backups")
         return os.path.join(backup_path, backup_name)
 
+    def get_objet_dir_path(self, hash):
+        return os.path.join(self.store_path, "objects", hash[:2])
+
     def get_object_path(self, hash):
         object_path = os.path.join(self.store_path, "objects", hash[:2])
         return os.path.join(object_path, hash + ".data")
@@ -204,6 +207,8 @@ class Store():
                         #os.rename(words[1], words[2])
                     elif (words[0] == "remove"):
                         os.remove(words[1])
+                    elif (words[0] == "rmdir"):
+                        shutil.rmtree(words[1])
                     elif (words[0] == "insert"):
                         self.db.insert({'hash':words[1], 'pointer':int(words[2])})
                     elif (words[0] == "update"):
@@ -428,8 +433,11 @@ class Store():
             tmp.recovery_backup(True)
 
     def removeObject(self, hash):
-        self.write_to_journal("remove " + self.get_object_path(hash))
-        self.write_to_journal("remove " + self.get_object_header_path(hash))
+        if len(os.listdir(self.get_objet_dir_path(hash))) == 2:
+            self.write_to_journal("rmdir " + self.get_objet_dir_path(hash))
+        else:
+            self.write_to_journal("remove " + self.get_object_path(hash))
+            self.write_to_journal("remove " + self.get_object_header_path(hash))
         self.write_to_journal("delete " + hash)
 
     def removeBackup(self, time):

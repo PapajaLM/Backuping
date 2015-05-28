@@ -156,9 +156,9 @@ echo "=========== 12th change of data: Cleanup after 8--11 =========="
 cd DataToBackup/Data1
 rm -r symlinks
 rm -r type-changes
-rm folder1
+rm -r folder1
 mv real-folder1 folder1
-rm folderWithData
+rm -r folderWithData
 mv real-folderWithData folderWithData
 cd ../../
 sleep 5
@@ -188,7 +188,7 @@ cp -a DataToBackup DataToBackupCopy13
 #sleep 5
 
 echo "=========== Recovering backed-up data =========="
-cd Backup/target/backups
+cd Backup/store/backups
 DIRS=(`ls`)
 cd ../../..
 cd MountPoint
